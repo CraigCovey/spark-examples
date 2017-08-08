@@ -1,5 +1,5 @@
 # Spark Machine Learning Code Examples
----
+
 *All the code in this repository is the original code of Craig Covey.*
 
 ### Purpose
@@ -19,9 +19,9 @@ In this repository I include code on:
 * Clustering using KMeans
 * Multiple Linear Regression
 
-Within each type of machine learning I typically break out the files with a suffix of "_main" and "_func". The _main file is the machine learning code all in one *Main* function. The _func file uses functional programming
-to break up the code into usable functions. This is the optimal way to write code and keeps your code tidy. There may be other files and the suffix should easily identify that purpose of the code.
+Within each directory of machine learning code I typically break out the files with a suffix of "_main" and "_func". The _main file consists of machine learning code all in one *Main* function. The _func file uses functional programming
+to break up the code into usable functions. This is the optimal way to write code and keeps your code tidy. Sometimes I include other files and the suffix should easily identify that purpose of the code.
 
-The code is heavily commented explaining what I am doing and in some places why I do chose to do that.
+The code is heavily commented explaining what I am doing and in some places why I chose to do that particular thing.
 
 `Happy Coding!`  :smiley:
