@@ -12,7 +12,7 @@ import org.apache.spark.sql.hive.HiveContext
 /* =============================================================================
 This Spark Scala 1.6 script uses multiple linear regression machine learning to
 predict column "target_column_name" using six columns as predictor inputs.
- 
+
 This code is more complex because it uses functional programming to split up code into units.
 ================================================================================
 */
@@ -154,13 +154,48 @@ object MultLinearRegressionFunc {
         // Return metrics as a dataframe
         val resultsDF = resultsRowToDF(sc, hc, target_variable, target_prediction, metricValues, metricNames)
 
-        // Print prediction dataframe
-        predictionDF
+        // Select columns for prediction results dataframe
+        val testDF = predictionDF
           .select("row_id_column", "target_column_name", "pred_target_column_name", "pred_col_1",
           "pred_col_2", "pred_col_3", "pred_col_4", "pred_col_5", "pred_col_6")
-          .show()
 
-        // Print metrics dataframe
+        println("##### Training Set Metrics #####")
+        //// Scala LinearRegressionModel
+        // https://spark.apache.org/docs/1.6.0/api/scala/index.html#org.apache.spark.ml.regression.LinearRegressionModel
+        val lrm = model.stages.last.asInstanceOf[LinearRegressionModel]
+        println("Coefficients: " + lrm.coefficients)
+        println("Intercept: " + lrm.intercept)
+        println("Num rows used in training model: " + lrm.summary.numInstances)
+        println("Num of features model trained on: " + lrm.numFeatures)
+        println("Predictor Varaibles: " + predictorVariables.mkString(", "))
+        //println("Explain Parameters: " + lrm.explainParams)
+        //// Scala LinearRegressionTrainingSummary
+        // https://spark.apache.org/docs/1.6.0/api/scala/index.html#org.apache.spark.ml.regression.LinearRegressionTrainingSummary
+        val lrts = lrm.summary
+        println("Standard error of est. coeff. & intercept:")
+        println("[" + lrts.coefficientStandardErrors.mkString(", ") + "]")
+        println("Deviance Residuals (residuals rescaled by the square root of the instance weights:")
+        println("[" + lrts.devianceResiduals.mkString(", ") + "]")
+        println("Explained Variance Regression Score: " + lrm.summary.explainedVariance)
+        // println("featuresCol: " + lrm.summary.featuresCol)
+        println("RSquared: " + lrts.r2)
+        println("Root Mean Squared Error: " + lrts.rootMeanSquaredError)
+        println("Mean Absolute Error: " + lrts.meanAbsoluteError)
+        println("Mean Squared Error: " + lrts.meanSquaredError)
+        println("Object History (scaled loss + regularization at each iteration):")
+        println("[" + lrts.objectiveHistory.toList + "]")
+        println("pValues: [" + lrm.summary.pValues.mkString(", ") + "]")
+        println("tValues (T-Statistic of est. coeff. & intercept: [" + lrm.summary.tValues.mkString(", ") + "]")
+        println("Residuals: available on request")
+        // val residualsDF = lrts.residuals.show()
+        // println("Total Iterations: " + lrts.totalIterations)
+
+        println("===== Testing Set Prediction Results =====")
+        // Print Testing prediction results dataframe - top 20
+        testDF.show()
+
+        // Print Testing metrics dataframe
+        println("===== Testing Set Metrics =====")
         resultsDF.show()
 
         //// End machine learning code ###################################################################################
