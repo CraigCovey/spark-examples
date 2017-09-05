@@ -5,16 +5,28 @@
 ### Purpose
 
 The purpose of this repository is to:
+
 1. Store all of my various Spark code in one location
 2. Be a guide for others in learning Spark
 3. Highlight my work in Spark
 
 ### Content
 
-Currently my Spark work consists of Spark 1.6 in the Scala programming language.
-Soon I will be upgrading to Spark 2.X and will add a new subfolder for Spark 2.X.
+As of September 2017 I upgraded to Spark 2.1 from 1.6 where I had spent the previous year working. My Spark 1.6 Scala machine learning code can be found in the *spark-1_6* folder.
 
-In this repository I include code on:
+With Spark 2.1 I will begin with a different approach. Before I upload machine learning code I will first include documentation with step-by-step instructions on creating: 
+
+* pom.xml file
+* Creating applications using IntelliJ IDEA & Apache Maven
+
+**Stay tuned!!**
+
+***
+
+##### Code Repository
+
+In this repository I include code on: 
+
 * Ingesting and transforming data
 * Clustering using KMeans
 * Multiple Linear Regression
