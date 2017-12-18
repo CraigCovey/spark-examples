@@ -1,4 +1,5 @@
-# Exporting Spark Dataframe to an Impala Table
+# Integrating Spark + HDFS + Impala
+Exporting a Spark dataframe to an Impala table
 
 _By Craig Covey - 2017_
 
