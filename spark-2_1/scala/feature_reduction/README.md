@@ -1,7 +1,7 @@
 # Spark Feature Reduction / Selection
 Using Spark 2.1 framework in the Scala programming language
 
-_By Craig Covey - 2017_
+_By Craig Covey - 2018_
 
 This section outlines my Spark Scala feature (column) reduction workflow:
 
@@ -16,4 +16,7 @@ This section outlines my Spark Scala feature (column) reduction workflow:
 	* _t_ Test (test on individual regression coefficients)
 	* _F_ Test (test of subsets of regression coefficients)
 
-_Code coming soon. All of the code about 85% complete_
+This code consists of two Scala files. _feature\_reduction.scala_ contains the correlation, covariance, PCA, All Possible Combination Regression, and the Random Forest Feature Importance code. While _hypothesis\_testing.scala_ has all of the statistics code.
+
+
+_Code work in progress_

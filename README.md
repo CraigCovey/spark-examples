@@ -12,12 +12,7 @@ The purpose of this repository is to:
 
 ### Content
 
-As of September 2017 I upgraded to Spark 2.1 from 1.6 where I had spent the previous year working. My Spark 1.6 Scala machine learning code can be found in the *spark-1_6* folder.
-
-With Spark 2.1 I will begin with a different approach. Before I upload machine learning code I will first include documentation with step-by-step instructions on creating: 
-
-* pom.xml file
-* Creating applications using IntelliJ IDEA & Apache Maven
+I have Spark 1.6 code and Spark 2.1 code, each in their respective folders. I will do my best to include code (with comments), document explaining my code, and pom.xml file on each topic.
 
 **Stay tuned!!**
 
@@ -28,6 +23,7 @@ With Spark 2.1 I will begin with a different approach. Before I upload machine l
 In this repository I include code on: 
 
 * Ingesting and transforming data
+* Saving data to Impala with HDFS and Kudu
 * Clustering using KMeans
 * Multiple Linear Regression
 
