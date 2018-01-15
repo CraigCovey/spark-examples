@@ -11,7 +11,7 @@ import org.apache.spark.sql.functions.mean
 import org.apache.spark.sql.functions._
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
-object FeatureReduction {
+object FeatureReductionDev {
 
     // Prints correlation between every column combination pair in a dataframe
     def corr_or_covMatrix(df: DataFrame, statType: String = "corr") : Unit = {
@@ -54,6 +54,267 @@ object FeatureReduction {
         }
 
     }
+
+
+    // Add backticks to string
+    def sanitize(input: String): String = s"`$input`"
+
+
+    // Prints correlation between every column combination pair in a dataframe
+    // Helps user decide if correlation is significant
+    def correlationOutput(ss: SparkSession, df: DataFrame, alpha: Double, p: String = "two-sided") : DataFrame = {
+
+        println("********************************* Pearson Correlation *********************************")
+
+        // To-do: explain correlation, coefficient of determination, test statistics, critical values
+
+        import ss.implicits._   // Needed for .toDF() & to use $"column_name" to reference a column in a dataframe
+
+        // Mutable array for string column names
+        val mArrCols = ArrayBuffer[String]()
+
+        // Mutable array for correlation values
+        val mArrCorrCov = ArrayBuffer[Double]()
+
+
+        // Array of dataframe column names
+        val names = df.columns
+        // Split column names into unique pairs as an array of arrays
+        val paired_cols = names.mkString(",").split(",").combinations(2).toArray
+
+        // Loop that prints the Pearson correlation between every column pair in the dataframe
+        for (i <- paired_cols.indices) {
+
+            // First column name of ith pair
+            val p_0 = paired_cols(i)(0)
+            // Second column name of ith pair
+            val p_1 = paired_cols(i)(1)
+
+
+            // Pearson Correlation between two columns
+            val cor = df.stat.corr(p_0, p_1)
+            //println(s"$p_0 vs $p_1 : corr = $cor")
+
+            // Collect columns in a mutable nested array
+            mArrCols += s"$p_0 vs $p_1"
+            // Collect correlation value in a mutable nested array
+            mArrCorrCov += cor
+
+
+        }
+
+        println("   ")
+
+        // Store all the values in a dataframe and sort in desc order
+        val arrCorrCov = mArrCorrCov.toArray
+        val arrCols = mArrCols.toArray
+
+
+        // Create dataframe of two arrays
+        val corrDF = ss.sparkContext.parallelize(arrCols zip arrCorrCov).toDF("Columns", "Corr")
+
+        // Calculate the effect size of the correlation (Coefficient of Determination)
+        // http://statisticalconcepts.blogspot.com/2010/04/interpretation-of-correlation.html
+        // http://janda.org/c10/Lectures/topic06/L24-significanceR.htm
+
+        // The coefficient of determination can vary from 0 to 1.00 and indicates that the proportion of
+        // variation in the scores can be predicted from the relationship between the two variables.
+
+        // Example, if r = 0.50 and Coefficient of determiination (r^2) = 0.25
+        // Means that 25% of variance in political stability is "explained" by literacy rate
+
+        val df_2 = corrDF
+          .withColumn("CoefDet", pow($"Corr", 2.0))
+
+        // Calculate the test statistic
+        // http://statisticalconcepts.blogspot.com/2010/04/interpretation-of-correlation.html
+        // http://janda.org/c10/Lectures/topic06/L24-significanceR.htm
+
+        val n = corrDF.count.toDouble
+        val degFreedom = n - 2.0
+        println("Degrees of Freedom = " + degFreedom)
+        println("Alpha = " + alpha)
+        println("Test: " + p)
+        var prob : Double = 0.0
+
+        if (p == "two-sided") {
+            prob = 1.0 - alpha / 2.0
+            println("Probability P = " + prob)
+        } else if (p == "upper one-sided") {
+            prob = 1.0 - alpha
+            println("Probability P = " + prob)
+        } else if (p == "lower one-sided") {
+            prob = 1.0 - alpha
+            println("Probability P = " + prob)
+        } else {
+            System.exit(1)
+        }
+
+        // To-do: if degrees of freedom is greater than 100, invoke infinity critical values
+        // ...
+
+        // Calculate critical value from Students t Table
+        val t = students_t_Table(ss)
+
+        // Must wrap column names in backticks that have a period in the name
+        // https://stackoverflow.com/a/42698510
+        // https://stackoverflow.com/a/42671494
+
+//        t.filter($"df" === degFreedom)
+//          .select(sanitize(prob.toString))
+//          .show()
+
+        val critValue : Double = t
+          .filter($"df" === degFreedom)
+          .select(sanitize(prob.toString))
+          .head().getDouble(0)
+
+        println("Critical Value (from t Table): " + critValue)
+
+        println("   ")
+        println("1. For a two-sided test, find the column corresponding to 1-α/2 and reject the null hypothesis " +
+          "if the absolue value of the test statistic is greater than the critical value.")
+        println("   ")
+        println("2. For an upper, one-sided test, find the column corresponding to 1-α and reject the null hypothesis " +
+          "if the test statistic is greater than the critical value.")
+        println("   ")
+        println("3. For a lower, one-sided test, find the column corresponding to 1-α and reject the null hypothesis " +
+          "if the test statistic is less than the negative of the critical value.")
+
+        println("   ")
+
+        val df_3 = df_2
+          .withColumn("tValue", $"Corr" * sqrt( (lit(n) - lit(2)) / (lit(1.0) - $"CoefDet") ) )
+          .withColumn("abs_tValue", abs($"Corr" * sqrt( (lit(n) - lit(2)) / (lit(1.0) - $"CoefDet") )) )
+          // Sort dataframe by Corr
+          .orderBy($"Corr".desc)
+
+        // To-do: Calculate whether to reject or fail to reject the null hypothesis - significant??
+        // ...
+
+        df_3
+
+    }
+
+
+
+    def students_t_Table(spark: SparkSession) : DataFrame = {
+
+        //// Critical Values of the Student's t Distribution
+
+        // http://www.itl.nist.gov/div898/handbook/eda/section3/eda3672.htm
+
+        import spark.implicits._    // for .toDf() method
+
+        // t table
+        val df : DataFrame = Seq(
+            (1.0 , 3.078, 6.314, 12.706, 31.821, 63.657, 318.313),
+            (2.0 , 1.886, 2.92, 4.303, 6.965, 9.925, 22.327),
+            (3.0 , 1.638, 2.353, 3.182, 4.541, 5.841, 10.215),
+            (4.0 , 1.533, 2.132, 2.776, 3.747, 4.604, 7.173),
+            (5.0 , 1.476, 2.015, 2.571, 3.365, 4.032, 5.893),
+            (6.0 , 1.44, 1.943, 2.447, 3.143, 3.707, 5.208),
+            (7.0 , 1.415, 1.895, 2.365, 2.998, 3.499, 4.782),
+            (8.0 , 1.397, 1.86, 2.306, 2.896, 3.355, 4.499),
+            (9.0 , 1.383, 1.833, 2.262, 2.821, 3.25, 4.296),
+            (10.0 , 1.372, 1.812, 2.228, 2.764, 3.169, 4.143),
+            (11.0 , 1.363, 1.796, 2.201, 2.718, 3.106, 4.024),
+            (12.0 , 1.356, 1.782, 2.179, 2.681, 3.055, 3.929),
+            (13.0 , 1.35, 1.771, 2.16, 2.65, 3.012, 3.852),
+            (14.0 , 1.345, 1.761, 2.145, 2.624, 2.977, 3.787),
+            (15.0 , 1.341, 1.753, 2.131, 2.602, 2.947, 3.733),
+            (16.0 , 1.337, 1.746, 2.12, 2.583, 2.921, 3.686),
+            (17.0 , 1.333, 1.74, 2.11, 2.567, 2.898, 3.646),
+            (18.0 , 1.33, 1.734, 2.101, 2.552, 2.878, 3.61),
+            (19.0 , 1.328, 1.729, 2.093, 2.539, 2.861, 3.579),
+            (20.0 , 1.325, 1.725, 2.086, 2.528, 2.845, 3.552),
+            (21.0 , 1.323, 1.721, 2.08, 2.518, 2.831, 3.527),
+            (22.0 , 1.321, 1.717, 2.074, 2.508, 2.819, 3.505),
+            (23.0 , 1.319, 1.714, 2.069, 2.5, 2.807, 3.485),
+            (24.0 , 1.318, 1.711, 2.064, 2.492, 2.797, 3.467),
+            (25.0 , 1.316, 1.708, 2.06, 2.485, 2.787, 3.45),
+            (26.0 , 1.315, 1.706, 2.056, 2.479, 2.779, 3.435),
+            (27.0 , 1.314, 1.703, 2.052, 2.473, 2.771, 3.421),
+            (28.0 , 1.313, 1.701, 2.048, 2.467, 2.763, 3.408),
+            (29.0 , 1.311, 1.699, 2.045, 2.462, 2.756, 3.396),
+            (30.0 , 1.31, 1.697, 2.042, 2.457, 2.75, 3.385),
+            (31.0 , 1.309, 1.696, 2.04, 2.453, 2.744, 3.375),
+            (32.0 , 1.309, 1.694, 2.037, 2.449, 2.738, 3.365),
+            (33.0 , 1.308, 1.692, 2.035, 2.445, 2.733, 3.356),
+            (34.0 , 1.307, 1.691, 2.032, 2.441, 2.728, 3.348),
+            (35.0 , 1.306, 1.69, 2.03, 2.438, 2.724, 3.34),
+            (36.0 , 1.306, 1.688, 2.028, 2.434, 2.719, 3.333),
+            (37.0 , 1.305, 1.687, 2.026, 2.431, 2.715, 3.326),
+            (38.0 , 1.304, 1.686, 2.024, 2.429, 2.712, 3.319),
+            (39.0 , 1.304, 1.685, 2.023, 2.426, 2.708, 3.313),
+            (40.0 , 1.303, 1.684, 2.021, 2.423, 2.704, 3.307),
+            (41.0 , 1.303, 1.683, 2.02, 2.421, 2.701, 3.301),
+            (42.0 , 1.302, 1.682, 2.018, 2.418, 2.698, 3.296),
+            (43.0 , 1.302, 1.681, 2.017, 2.416, 2.695, 3.291),
+            (44.0 , 1.301, 1.68, 2.015, 2.414, 2.692, 3.286),
+            (45.0 , 1.301, 1.679, 2.014, 2.412, 2.69, 3.281),
+            (46.0 , 1.3, 1.679, 2.013, 2.41, 2.687, 3.277),
+            (47.0 , 1.3, 1.678, 2.012, 2.408, 2.685, 3.273),
+            (48.0 , 1.299, 1.677, 2.011, 2.407, 2.682, 3.269),
+            (49.0 , 1.299, 1.677, 2.01, 2.405, 2.68, 3.265),
+            (50.0 , 1.299, 1.676, 2.009, 2.403, 2.678, 3.261),
+            (51.0 , 1.298, 1.675, 2.008, 2.402, 2.676, 3.258),
+            (52.0 , 1.298, 1.675, 2.007, 2.4, 2.674, 3.255),
+            (53.0 , 1.298, 1.674, 2.006, 2.399, 2.672, 3.251),
+            (54.0 , 1.297, 1.674, 2.005, 2.397, 2.67, 3.248),
+            (55.0 , 1.297, 1.673, 2.004, 2.396, 2.668, 3.245),
+            (56.0 , 1.297, 1.673, 2.003, 2.395, 2.667, 3.242),
+            (57.0 , 1.297, 1.672, 2.002, 2.394, 2.665, 3.239),
+            (58.0 , 1.296, 1.672, 2.002, 2.392, 2.663, 3.237),
+            (59.0 , 1.296, 1.671, 2.001, 2.391, 2.662, 3.234),
+            (60.0 , 1.296, 1.671, 2.00, 2.39, 2.66, 3.232),
+            (61.0 , 1.296, 1.67, 2.00, 2.389, 2.659, 3.229),
+            (62.0 , 1.295, 1.67, 1.999, 2.388, 2.657, 3.227),
+            (63.0 , 1.295, 1.669, 1.998, 2.387, 2.656, 3.225),
+            (64.0 , 1.295, 1.669, 1.998, 2.386, 2.655, 3.223),
+            (65.0 , 1.295, 1.669, 1.997, 2.385, 2.654, 3.22),
+            (66.0 , 1.295, 1.668, 1.997, 2.384, 2.652, 3.218),
+            (67.0 , 1.294, 1.668, 1.996, 2.383, 2.651, 3.216),
+            (68.0 , 1.294, 1.668, 1.995, 2.382, 2.65, 3.214),
+            (69.0 , 1.294, 1.667, 1.995, 2.382, 2.649, 3.213),
+            (70.0 , 1.294, 1.667, 1.994, 2.381, 2.648, 3.211),
+            (71.0 , 1.294, 1.667, 1.994, 2.38, 2.647, 3.209),
+            (72.0 , 1.293, 1.666, 1.993, 2.379, 2.646, 3.207),
+            (73.0 , 1.293, 1.666, 1.993, 2.379, 2.645, 3.206),
+            (74.0 , 1.293, 1.666, 1.993, 2.378, 2.644, 3.204),
+            (75.0 , 1.293, 1.665, 1.992, 2.377, 2.643, 3.202),
+            (76.0 , 1.293, 1.665, 1.992, 2.376, 2.642, 3.201),
+            (77.0 , 1.293, 1.665, 1.991, 2.376, 2.641, 3.199),
+            (78.0 , 1.292, 1.665, 1.991, 2.375, 2.64, 3.198),
+            (79.0 , 1.292, 1.664, 1.99, 2.374, 2.64, 3.197),
+            (80.0 , 1.292, 1.664, 1.99, 2.374, 2.639, 3.195),
+            (81.0 , 1.292, 1.664, 1.99, 2.373, 2.638, 3.194),
+            (82.0 , 1.292, 1.664, 1.989, 2.373, 2.637, 3.193),
+            (83.0 , 1.292, 1.663, 1.989, 2.372, 2.636, 3.191),
+            (84.0 , 1.292, 1.663, 1.989, 2.372, 2.636, 3.19),
+            (85.0 , 1.292, 1.663, 1.988, 2.371, 2.635, 3.189),
+            (86.0 , 1.291, 1.663, 1.988, 2.37, 2.634, 3.188),
+            (87.0 , 1.291, 1.663, 1.988, 2.37, 2.634, 3.187),
+            (88.0 , 1.291, 1.662, 1.987, 2.369, 2.633, 3.185),
+            (89.0 , 1.291, 1.662, 1.987, 2.369, 2.632, 3.184),
+            (90.0 , 1.291, 1.662, 1.987, 2.368, 2.632, 3.183),
+            (91.0 , 1.291, 1.662, 1.986, 2.368, 2.631, 3.182),
+            (92.0 , 1.291, 1.662, 1.986, 2.368, 2.63, 3.181),
+            (93.0 , 1.291, 1.661, 1.986, 2.367, 2.63, 3.18),
+            (94.0 , 1.291, 1.661, 1.986, 2.367, 2.629, 3.179),
+            (95.0 , 1.291, 1.661, 1.985, 2.366, 2.629, 3.178),
+            (96.0 , 1.29, 1.661, 1.985, 2.366, 2.628, 3.177),
+            (97.0 , 1.29, 1.661, 1.985, 2.365, 2.627, 3.176),
+            (98.0 , 1.29, 1.661, 1.984, 2.365, 2.627, 3.175),
+            (99.0 , 1.29, 1.66, 1.984, 2.365, 2.626, 3.175),
+            (100.0 , 1.29, 1.66, 1.984, 2.364, 2.626, 3.174)
+        ).toDF("df", "0.9", "0.95", "0.975", "0.99", "0.995", "0.999")
+
+        df
+
+    }
+
+
 
     def principalComponentAnalysis(df: DataFrame, input_cols: Array[String], k: Int) : Unit = {
 
@@ -431,8 +692,9 @@ object FeatureReduction {
         // Display Covariance between varibles
         corr_or_covMatrix(corr_data, "cov")
 
-
-
+        // Prints correlation between every column combination pair in a dataframe
+        val c = correlationOutput(spark, corr_data, 0.05, "two-sided")
+        c.show(c.count.toInt, false)
 
 
         // target/response/outcome/result varaible

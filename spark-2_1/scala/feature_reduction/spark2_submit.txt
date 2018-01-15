@@ -1,0 +1,16 @@
+spark2-submit \
+  --class com.datascience.craig.FeatureReductionDev \
+  --driver-memory 4g \
+  --num-executors 6 \
+  --deploy-mode client \
+  --master yarn \
+  /home/your_folder/jars/feature-reduction-1.0-SNAPSHOT.jar
+
+
+spark2-submit \
+  --class com.datascience.craig.FeatureReductionPackage \
+  --driver-memory 4g \
+  --num-executors 6 \
+  --deploy-mode client \
+  --master yarn \
+  /home/your_folder/jars/feature-reduction-1.0-SNAPSHOT.jar
