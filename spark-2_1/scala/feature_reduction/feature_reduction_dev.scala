@@ -65,8 +65,35 @@ object FeatureReductionDev {
     def correlationOutput(ss: SparkSession, df: DataFrame, alpha: Double, p: String = "two-sided") : DataFrame = {
 
         println("********************************* Pearson Correlation *********************************")
-
-        // To-do: explain correlation, coefficient of determination, test statistics, critical values
+        println("  ")
+        println("Correlation refers to a technique used to measure the relationship between two variables.")
+        println("When two things are correlated, it means that they vary together. ")
+        print("Correlation coefficients can vary numerically between 0.0 and 1.0. The closer the correlation is to 1.0, " +
+          "the stronger the relationship between the two variables. A correlation of 0.0 indicates the absence of a relationship. " +
+          "If the correlation coefficient is –0.80, which indicates the presence of a strong relationship. ")
+        print("A positive correlation coefficient means that as variable 1 increases, variable 2 increases, and conversely, as variable 1 decreases, variable 2 decreases. " +
+          "A negative correlation means that as variable 1 increases, variable 2 decreases and vice versa. ")
+        // http://statisticalconcepts.blogspot.com/2010/04/interpretation-of-correlation.html
+        println("  ")
+        println("  ")
+        print("For correlations, the effect size is called the coefficient of determination and is defined as r2. " +
+          "The coefficient of determination can vary from 0 to 1.00 and indicates that the proportion of variation in the scores can be " +
+          "predicted from the relationship between the two variables. For r  = -0.80 the coefficient of determination is 0.65, " +
+          "which means that 65% of the variation in variable 1 can be predicted from the relationship between variable 2 and " +
+          "variable 1. (Conversely, 35% of the variation in variable 1 cannot be explained.)")
+        // http://statisticalconcepts.blogspot.com/2010/04/interpretation-of-correlation.html
+        println("  ")
+        println("  ")
+        print("A test statistic is a standardized value that is calculated from sample data during a hypothesis test. " +
+          "A test statistic measures the degree of agreement between a sample of data and the null hypothesis. Its observed " +
+          "value changes randomly from one random sample to a different sample. A test statistic contains information about " +
+          "the data that is relevant for deciding whether to reject the null hypothesis. ")
+        // http://support.minitab.com/en-us/minitab-express/1/help-and-how-to/basic-statistics/inference/supporting-topics/basics/what-is-a-test-statistic/
+        println("   ")
+        println("  ")
+        println("In hypothesis testing, a critical value is a point on the test distribution that is compared to the test " +
+          "statistic to determine whether to reject the null hypothesis.")
+        // http://support.minitab.com/en-us/minitab-express/1/help-and-how-to/basic-statistics/inference/supporting-topics/basics/what-is-a-critical-value/
 
         import ss.implicits._   // Needed for .toDF() & to use $"column_name" to reference a column in a dataframe
 
@@ -130,7 +157,8 @@ object FeatureReductionDev {
         // http://statisticalconcepts.blogspot.com/2010/04/interpretation-of-correlation.html
         // http://janda.org/c10/Lectures/topic06/L24-significanceR.htm
 
-        val n = corrDF.count.toDouble
+        // n = number of rows in original dataframe
+        val n : Double = df.count.toDouble
         val degFreedom = n - 2.0
         println("Degrees of Freedom = " + degFreedom)
         println("Alpha = " + alpha)
@@ -150,11 +178,20 @@ object FeatureReductionDev {
             System.exit(1)
         }
 
-        // To-do: if degrees of freedom is greater than 100, invoke infinity critical values
-        // ...
 
-        // Calculate critical value from Students t Table
-        val t = students_t_Table(ss)
+        // If degrees of freedom > 100 then use the infinity critical values.
+        // If degrees of freedom <= 100 then use the critical values from 1 to 100.
+        val t : DataFrame = if (degFreedom > 100) {
+            // Creates a dataframe of critical values with degrees of freedom equal to infinity
+            // http://www.itl.nist.gov/div898/handbook/eda/section3/eda3672.htm
+            Seq(
+                (1.282, 1.645, 1.960, 2.326, 2.576, 3.090)
+            ).toDF("df", "0.9", "0.95", "0.975", "0.99", "0.995", "0.999")
+        } else {
+            // Creates a dataframe of critical values with degrees of freedome from 1 to 100
+            students_t_Table(ss)
+        }
+
 
         // Must wrap column names in backticks that have a period in the name
         // https://stackoverflow.com/a/42698510
@@ -172,27 +209,33 @@ object FeatureReductionDev {
         println("Critical Value (from t Table): " + critValue)
 
         println("   ")
-        println("1. For a two-sided test, find the column corresponding to 1-α/2 and reject the null hypothesis " +
-          "if the absolue value of the test statistic is greater than the critical value.")
+        println("1. For a two-sided test, find the column corresponding to probability 1-α/2 and reject the null hypothesis " +
+          "if the absolute value of the test statistic is greater than the critical value.")
         println("   ")
-        println("2. For an upper, one-sided test, find the column corresponding to 1-α and reject the null hypothesis " +
+        println("2. For an upper, one-sided test, find the column corresponding to probability 1-α and reject the null hypothesis " +
           "if the test statistic is greater than the critical value.")
         println("   ")
-        println("3. For a lower, one-sided test, find the column corresponding to 1-α and reject the null hypothesis " +
+        println("3. For a lower, one-sided test, find the column corresponding to probability 1-α and reject the null hypothesis " +
           "if the test statistic is less than the negative of the critical value.")
-
         println("   ")
 
+        // Calculate test statistic and absolute value of test statistic
         val df_3 = df_2
           .withColumn("tValue", $"Corr" * sqrt( (lit(n) - lit(2)) / (lit(1.0) - $"CoefDet") ) )
           .withColumn("abs_tValue", abs($"Corr" * sqrt( (lit(n) - lit(2)) / (lit(1.0) - $"CoefDet") )) )
           // Sort dataframe by Corr
           .orderBy($"Corr".desc)
 
-        // To-do: Calculate whether to reject or fail to reject the null hypothesis - significant??
-        // ...
+        // Hypothesis Testing
+        val df_4 : DataFrame = if (p == "two-sided") {
+            df_3.withColumn("Significance", when($"abs_tValue" > critValue, "Reject Null Hyp").otherwise("Fail to Reject"))
+        } else if (p == "upper one-sided") {
+            df_3.withColumn("Significance", when($"tValue" > critValue, "Reject Null Hyp").otherwise("Fail to Reject"))
+        } else {
+            df_3.withColumn("Significance", when($"tValue" < critValue, "Reject Null Hyp").otherwise("Fail to Reject"))
+        }
 
-        df_3
+        df_4
 
     }
 
@@ -564,6 +607,12 @@ object FeatureReductionDev {
         val minMAE : Double = combinedDF.agg(min($"mae")).collect()(0).getDouble(0)
         combinedDF.filter($"mae" === minMAE).show(false)
 
+        // Display top Predictors ordered by r2
+        println("*** Top R2 ***")
+        combinedDF
+          .orderBy($"r2".desc)
+          .show()
+
     }
 
 
@@ -687,7 +736,7 @@ object FeatureReductionDev {
         val corr_data : DataFrame = df.select(feature_columns.head, feature_columns.tail: _*)
 
         // Display Correlation between varibles
-        corr_or_covMatrix(corr_data, "corr")
+        // corr_or_covMatrix(corr_data, "corr")
 
         // Display Covariance between varibles
         corr_or_covMatrix(corr_data, "cov")
@@ -695,6 +744,16 @@ object FeatureReductionDev {
         // Prints correlation between every column combination pair in a dataframe
         val c = correlationOutput(spark, corr_data, 0.05, "two-sided")
         c.show(c.count.toInt, false)
+
+        println("Note:")
+        println("   A relationship can be strong and yet not significant.")
+        println("   Conversely, a relationship can be weak but significant.")
+        println("      The key factor is the size of the sample.")
+        print("   For small samples, it is easy to produce a strong correlation by chance and one must pay attention to signficance to keep from jumping to conclusions. " +
+          "For large samples, it is easy to achieve significance, and one must pay attention to the strength of the correlation to determine if the relationship explains very much.")
+        println("   ")
+
+
 
 
         // target/response/outcome/result varaible
